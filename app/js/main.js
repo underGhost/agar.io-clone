@@ -411,9 +411,36 @@ function drawFood(food) {
 }
 
 function drawVirus(virus) {
-  const img = new Image();
-  img.src = virusImage;
-  graph.drawImage(img, virus.x - player.x - virus.radius + screenWidth / 2, virus.y - player.y - virus.radius + screenHeight / 2, virus.radius * 2, virus.radius * 2);
+  let rot = Math.PI / 2 * 3;
+  const cx = virus.x - player.x + screenWidth / 2;
+  const cy = virus.y - player.y + screenHeight / 2;
+  let x = virus.x;
+  let y = virus.y;
+  const outerRadius = virus.radius;
+  const innerRadius = outerRadius - 5;
+  const spikes = Math.floor(outerRadius / (rot / 2));
+  const step = Math.PI / spikes;
+
+  graph.strokeStyle = '#19D119';
+  graph.fillStyle = '#33ff33';
+
+  graph.beginPath();
+  graph.moveTo(cx, cy - outerRadius);
+  for ( let i = 0; i < spikes; i++) {
+    x = cx + Math.cos(rot) * outerRadius;
+    y = cy + Math.sin(rot) * outerRadius;
+    graph.lineTo(x, y);
+    rot += step;
+
+    x = cx + Math.cos(rot) * innerRadius;
+    y = cy + Math.sin(rot) * innerRadius;
+    graph.lineTo(x, y);
+    rot += step;
+  }
+  graph.lineTo(cx, cy - outerRadius);
+  graph.fill();
+  graph.stroke();
+  graph.closePath();
 }
 
 function drawBots(bot) {
