@@ -549,7 +549,89 @@ function moveBot() {
   }
 }
 
-function tickPlayer(currentPlayer) {
+let playerCircle = {};
+let currentCell = {};
+let currentPlayer = {};
+
+function checkCollision(cell) {
+  const response = new SAT.Response();
+  SAT.testCircleCircle(playerCircle,
+      new C(new V(cell.x, cell.y), cell.radius),
+      response);
+  return response;
+}
+
+function checkConsumption(cell) {
+  return SAT.pointInCircle(new V(cell.x, cell.y), playerCircle);
+}
+
+function deleteFood(f) {
+  food[f] = {};
+  food.splice(f, 1);
+}
+
+function collisionCheck(collision) {
+  if (collision.aUser.mass > collision.bUser.mass * 1.1  && collision.aUser.radius > Math.sqrt(Math.pow(collision.aUser.x - collision.bUser.x, 2) + Math.pow(collision.aUser.y - collision.bUser.y, 2)) * 1.75) {
+    console.log(`[DEBUG] Killing user: ${collision.bUser.id}`);
+    console.log('[DEBUG] Collision info:');
+
+    const botCheck = Util.findIndex(bots, collision.bUser.id);
+    const userCheck = Util.findIndex(users, collision.bUser.id);
+    const numUser = userCheck > -1 ? userCheck : botCheck;
+    if (numUser > -1) {
+      if (collision.bUser.type === 'bot') {
+        bots.splice(numUser, 1);
+      } else {
+        if (users[numUser].cells.length > 1) {
+          users[numUser].massTotal -= collision.bUser.mass;
+          users[numUser].cells.splice(collision.bUser.num, 1);
+        } else {
+          users.splice(numUser, 1);
+          io.emit('playerDied', { name: collision.bUser.name });
+          sockets[collision.bUser.id].emit('RIP');
+        }
+      }
+
+      currentPlayer.massTotal += collision.bUser.mass;
+      collision.aUser.mass += collision.bUser.mass;
+    }
+  }
+}
+
+function check(user) {
+  for (let i = 0; i < user.cells.length; i++) {
+    if (user.id !== currentPlayer.id) {
+      const response = checkCollision(user.cells[i]);
+      if (response) {
+        response.aUser = currentCell;
+        response.bUser = {
+          id: user.id,
+          name: user.name,
+          x: user.cells[i].x,
+          y: user.cells[i].y,
+          num: i,
+          type: user.type,
+          mass: user.cells[i].mass
+        };
+        collisionCheck(response);
+      }
+    }
+  }
+}
+
+function eatMass(m, z) {
+  if (SAT.pointInCircle(new V(m.x, m.y), playerCircle)) {
+    if (m.id === currentPlayer.id && m.speed > 0 && z === m.num) {
+      return false;
+    }
+    if (currentCell.mass > m.masa * 1.1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function tickPlayer() {
   // TODO: THIS SHOULD NOT HAVE TO BE DECLARED HERE FIX SCOPE
   let z = 0;
 
@@ -561,83 +643,6 @@ function tickPlayer(currentPlayer) {
   moveBot();
   movePlayer(currentPlayer);
 
-  function deleteFood(f) {
-    food[f] = {};
-    food.splice(f, 1);
-  }
-
-  function collisionCheck(collision) {
-    if (collision.aUser.mass > collision.bUser.mass * 1.1  && collision.aUser.radius > Math.sqrt(Math.pow(collision.aUser.x - collision.bUser.x, 2) + Math.pow(collision.aUser.y - collision.bUser.y, 2)) * 1.75) {
-      console.log(`[DEBUG] Killing user: ${collision.bUser.id}`);
-      console.log('[DEBUG] Collision info:');
-
-      const botCheck = Util.findIndex(bots, collision.bUser.id);
-      const userCheck = Util.findIndex(users, collision.bUser.id);
-      const numUser = userCheck > -1 ? userCheck : botCheck;
-      if (numUser > -1) {
-        if (collision.bUser.type === 'bot') {
-          bots.splice(numUser, 1);
-        } else {
-          if (users[numUser].cells.length > 1) {
-            users[numUser].massTotal -= collision.bUser.mass;
-            users[numUser].cells.splice(collision.bUser.num, 1);
-          } else {
-            users.splice(numUser, 1);
-            io.emit('playerDied', { name: collision.bUser.name });
-            sockets[collision.bUser.id].emit('RIP');
-          }
-        }
-
-        currentPlayer.massTotal += collision.bUser.mass;
-        collision.aUser.mass += collision.bUser.mass;
-      }
-    }
-  }
-
-  let playerCircle = {};
-  let currentCell = {};
-  const playerCollisions = [];
-
-  function check(user) {
-    for (let i = 0; i < user.cells.length; i++) {
-      if (/* user.cells[i].mass > 10 && */ user.id !== currentPlayer.id) {
-        const response = new SAT.Response();
-        const collided = SAT.testCircleCircle(playerCircle,
-            new C(new V(user.cells[i].x, user.cells[i].y), user.cells[i].radius),
-            response);
-        if (collided) {
-          response.aUser = currentCell;
-          response.bUser = {
-            id: user.id,
-            name: user.name,
-            x: user.cells[i].x,
-            y: user.cells[i].y,
-            num: i,
-            type: user.type,
-            mass: user.cells[i].mass
-          };
-          playerCollisions.push(response);
-        }
-      }
-    }
-  }
-
-  function eatMass(m) {
-    if (SAT.pointInCircle(new V(m.x, m.y), playerCircle)) {
-      if (m.id === currentPlayer.id && m.speed > 0 && z === m.num) {
-        return false;
-      }
-      if (currentCell.mass > m.masa * 1.1) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function funcFood(f) {
-    return SAT.pointInCircle(new V(f.x, f.y), playerCircle);
-  }
-
   // TODO: FIX THIS Z VARIABLE AND EATMASS()
   for (z = 0; z < currentPlayer.cells.length; z++) {
     currentCell = currentPlayer.cells[z];
@@ -645,15 +650,15 @@ function tickPlayer(currentPlayer) {
       new V(currentCell.x, currentCell.y),
       currentCell.radius
     );
-
-    const foodEaten = food.map(funcFood)
+    const foodEaten = food.map(checkConsumption)
       .reduce((a, b, c) => { return b ? a.concat(c) : a; }, []);
 
     foodEaten.forEach(deleteFood);
-    const massEaten = massFood.map(eatMass)
+
+    const massEaten = massFood.map(eatMass.bind(z))
       .reduce((a, b, c) => {return b ? a.concat(c) : a; }, []);
 
-    const virusCollision = virus.map(funcFood)
+    const virusCollision = virus.map(checkConsumption)
       .reduce((a, b, c) => { return b ? a.concat(c) : a; }, []);
 
     if (virusCollision > 0 && currentCell.mass > virus[virusCollision].mass) {
@@ -685,22 +690,20 @@ function tickPlayer(currentPlayer) {
     sockets[currentPlayer.id].emit('playerScore', currentPlayer.score);
     currentCell.radius = Util.massToRadius(currentCell.mass);
     playerCircle.r = currentCell.radius;
-    qt.clear();
-
-    qt.insert(users);
-    qt.insert(bots);
-
 
     // TODO: TEST TO MAKE SURE PLAYER COLLISSIONS WORK
     qt.retrieve(currentPlayer, check);
-
-    playerCollisions.forEach(collisionCheck);
   }
 }
 
 function moveloop() {
+  qt.clear();
+
+  qt.insert(users);
+  qt.insert(bots);
   for (let i = 0; i < users.length; i++) {
-    tickPlayer(users[i]);
+    currentPlayer = users[i];
+    tickPlayer();
   }
   for (let i = 0; i < massFood.length; i++) {
     if (massFood[i].speed > 0) {
